@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #0a0a0a;
+    overflow: hidden;
+    font-family: monospace;
+    cursor: none;
+  }
+
+  #cursor {
+    position: fixed;
+    width: 10px; height: 10px;
+    background: #f0ede6;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    mix-blend-mode: difference;
+    transition: width 0.2s ease, height 0.2s ease, opacity 0.2s ease;
+  }
+
+  /* 뷰포트: 항상 화면 중앙, 비율 유지 (letterbox) */
+  #stage {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0a;
+  }
+
+  #viewport {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: center center;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* 슬라이드 */
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+  }
+  .slide.active  { display: block; z-index: 2; }
+  .slide.leaving { display: block; z-index: 1; }
+
+  /* PNG 배경 — 1920×1080 고정, 피그마 좌표와 1:1 */
+  .slide-bg {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+    background-size: 1920px 1080px;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+  }
+
+  /* 미디어/링크 오버레이 — position:absolute, 좌표는 피그마 px 그대로 */
+  .media-overlay {
+    position: absolute;
+    overflow: hidden;
+  }
+  .media-overlay video,
+  .media-overlay img {
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    display: block;
+  }
+  .media-overlay .lottie-wrap {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 링크 오버레이 */
+  .link-overlay {
+    position: absolute;
+    display: block;
+    background: transparent;
+    z-index: 20;
+    cursor: pointer;
+  }
+
+  /* 슬라이드 전환 애니메이션 */
+  @keyframes slideInRight  { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  @keyframes slideInLeft   { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+  @keyframes slideOutLeft  { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+  @keyframes slideOutRight { from { transform: translateX(0); } to { transform: translateX(100%); } }
+
+  .anim-in-right  { animation: slideInRight  0.55s cubic-bezier(0.77,0,0.18,1) forwards; }
+  .anim-in-left   { animation: slideInLeft   0.55s cubic-bezier(0.77,0,0.18,1) forwards; }
+  .anim-out-left  { animation: slideOutLeft  0.55s cubic-bezier(0.77,0,0.18,1) forwards; }
+  .anim-out-right { animation: slideOutRight 0.55s cubic-bezier(0.77,0,0.18,1) forwards; }
+
+  /* 썸네일 스트립 */
+  #thumb-strip {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    z-index: 150;
+    background: rgba(10,10,10,0.5);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 8px 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    transform: translateX(-50%) translateY(8px);
+    max-width: 90vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #thumb-strip::-webkit-scrollbar { display: none; }
+  #thumb-strip.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+  .thumb {
+    width: 48px;
+    height: 27px;
+    border-radius: 4px;
+    background-size: cover;
+    background-position: center;
+    background-color: #222;
+    cursor: pointer;
+    flex-shrink: 0;
+    border: 1.5px solid transparent;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .thumb:hover { transform: scale(1.1); }
+  .thumb.active { border-color: #f0ede6; }
+
+  /* UI */
+  #ui {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 200;
+    background: rgba(10,10,10,0.4);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 40px;
+    padding: 9px 22px;
+  }
+  #ui button {
+    background: none; border: none; cursor: none;
+    color: rgba(240,237,230,0.4);
+    font-size: 16px; padding: 3px 7px;
+    transition: color 0.2s;
+  }
+  #ui button:hover { color: #f0ede6; }
+  #counter { font-size: 11px; letter-spacing: 0.15em; color: rgba(240,237,230,0.35); min-width: 44px; text-align: center; }
+
+
+
+
+
+  /* 클릭존 — 링크보다 낮은 z-index */
+  #zone-left, #zone-right {
+    position: fixed; top: 0; bottom: 0; width: 30%; z-index: 10;
+  }
+  #zone-left { left: 0; } #zone-right { right: 0; }
+
+  #hint {
+    position: fixed; bottom: 70px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px; letter-spacing: 0.18em;
+    color: rgba(240,237,230,0.25);
+    z-index: 200; pointer-events: none; white-space: nowrap;
+    animation: hintFade 5s ease forwards;
+  }
+  @keyframes hintFade { 0%{opacity:0} 20%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+
+  /* 로딩 스피너 */
+  #loading {
+    position: fixed; inset: 0;
+    background: #0a0a0a;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+    color: rgba(240,237,230,0.3);
+    font-size: 12px; letter-spacing: 0.2em;
+    font-family: monospace;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">LOADING…</div>
+<div id="cursor"></div>
+
+<div id="stage">
+  <div id="viewport"></div>
+</div>
+
+<div id="zone-left"></div>
+<div id="zone-right"></div>
+
+<div id="thumb-strip"></div>
+
+<div id="ui">
+  <button id="btn-prev">&#8592;</button>
+  <span id="counter"></span>
+  <button id="btn-next">&#8594;</button>
+</div>
+<div id="hint">← → 키보드 &nbsp;|&nbsp; 클릭 &nbsp;|&nbsp; 스와이프</div>
+
+<script>
+const SLIDES = [
+
+  // 01
+  { bg: "1.png", media: [], links: [] },
+  // 02
+  { bg: "2.png", media: [], links: [] },
+  // 03
+  { bg: "3.png", media: [], links: [] },
+  // 04
+  { bg: "4.png", media: [], links: [] },
+  // 05
+  { bg: "5.png", media: [], links: [] },
+  // 06
+  { bg: "6.png", media: [], links: [] },
+  // 07
+  { bg: "7.png", media: [], links: [] },
+
+  // 08 — 로티 2개
+  {
+    bg: "8.png",
+    media: [
+      { type: "lottie", src: "8-1.json", top: 312, left: 59,   width: 500, height: 500, loop: true, autoplay: true },
+      { type: "lottie", src: "8-2.json", top: 312, left: 1119, width: 500, height: 500, loop: true, autoplay: true },
+    ],
+    links: []
+  },
+
+  // 09
+  { bg: "9.png", media: [], links: [] },
+  // 10
+  { bg: "10.png", media: [], links: [] },
+
+  // 11 — 링크
+  {
+    bg: "11.png", media: [],
+    links: [
+      { url: "https://design-library.kmongcorp.com", top: 994, left: 1571, width: 289, height: 26 }
+    ]
+  },
+
+  // 12 — 영상 + 링크
+  {
+    bg: "12.png",
+    media: [
+      { type: "video", src: "12.mp4", top: 312, left: 0, width: 1920, height: 768, autoplay: true, loop: true, muted: true },
+    ],
+    links: [
+      { url: "https://design-library.kmongcorp.com/design_principle", top: 145, left: 960, width: 418, height: 24 }
+    ]
+  },
+
+  // 13 — 영상 + 링크
+  {
+    bg: "13.png",
+    media: [
+      { type: "video", src: "13.mp4", top: 312, left: 0, width: 1920, height: 768, autoplay: true, loop: true, muted: true },
+    ],
+    links: [
+      { url: "https://design-library.kmongcorp.com/design_principle", top: 145, left: 960, width: 418, height: 24 }
+    ]
+  },
+
+  // 14 — 링크
+  {
+    bg: "14.png", media: [],
+    links: [
+      { url: "https://design-library.kmongcorp.com/iconography", top: 121, left: 960, width: 389, height: 24 }
+    ]
+  },
+
+  // 15
+  { bg: "15.png", media: [], links: [] },
+  // 16
+  { bg: "16.png", media: [], links: [] },
+
+  // 17 — 전체 영상
+  {
+    bg: "",
+    media: [
+      { type: "video", src: "17.mp4", top: 0, left: 0, width: 1920, height: 1080, autoplay: true, loop: true, muted: true },
+    ],
+    links: []
+  },
+
+  // 18
+  { bg: "18.png", media: [], links: [] },
+
+  // 19 — 전체 영상 + 링크
+  {
+    bg: "",
+    media: [
+      { type: "video", src: "19.mp4", top: 0, left: 0, width: 1920, height: 1080, autoplay: true, loop: true, muted: true },
+    ],
+    links: [
+      { url: "https://blog.kmong.com/lottie%EB%A5%BC-%ED%99%9C%EC%9A%A9%ED%95%9C-%EC%A0%84%EB%AC%B8%EA%B0%80-%EB%93%B1%EA%B8%89-%ED%8E%98%EC%9D%B4%EC%A7%80-%EA%B7%B8%EB%9E%98%ED%94%BD-%EA%B0%9C%EC%84%A0-4185290ef4c3", top: 994, left: 831, width: 258, height: 26 }
+    ]
+  },
+
+  // 20 — 전체 영상 + 링크
+  {
+    bg: "",
+    media: [
+      { type: "video", src: "20.mp4", top: 0, left: 0, width: 1920, height: 1080, autoplay: true, loop: true, muted: true },
+    ],
+    links: [
+      { url: "https://blog.kmong.com/lottie%EB%A5%BC-%ED%99%9C%EC%9A%A9%ED%95%9C-%EC%A0%84%EB%AC%B8%EA%B0%80-%EB%93%B1%EA%B8%89-%ED%8E%98%EC%9D%B4%EC%A7%80-%EA%B7%B8%EB%9E%98%ED%94%BD-%EA%B0%9C%EC%84%A0-4185290ef4c3", top: 994, left: 831, width: 258, height: 26 }
+    ]
+  },
+
+  // 21 — GIF + 링크
+  {
+    bg: "21.png",
+    media: [
+      { type: "gif", src: "21.gif", top: 414, left: 1525, width: 211, height: 211 },
+    ],
+    links: [
+      { url: "https://kmong.com/", top: 994, left: 1710, width: 150, height: 26 }
+    ]
+  },
+
+  // 22 — 로티 8개
+  {
+    bg: "22.png",
+    media: [
+      { type: "lottie", src: "22-1.json", top: 223, left: 206,  width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-2.json", top: 223, left: 402,  width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-3.json", top: 223, left: 598,  width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-4.json", top: 223, left: 794,  width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-5.json", top: 223, left: 990,  width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-6.json", top: 223, left: 1186, width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-7.json", top: 223, left: 1382, width: 136, height: 136, loop: true, autoplay: true },
+      { type: "lottie", src: "22-8.json", top: 223, left: 1578, width: 136, height: 136, loop: true, autoplay: true },
+    ],
+    links: []
+  },
+
+  // 23
+  { bg: "23.png", media: [], links: [] },
+
+  // 24 — 로티
+  {
+    bg: "24.png",
+    media: [
+      { type: "lottie", src: "24.json", top: 457, left: 1459, width: 195, height: 175, loop: true, autoplay: true },
+    ],
+    links: []
+  },
+
+  // 25 — 로티
+  {
+    bg: "25.png",
+    media: [
+      { type: "lottie", src: "25.json", top: 466, left: 1275, width: 190, height: 152, loop: true, autoplay: true },
+    ],
+    links: []
+  },
+
+  // 26 — 로티 5개
+  {
+    bg: "26.png",
+    media: [
+      { type: "lottie", src: "26-1.json", top: 497, left: 75,   width: 60, height: 60, loop: true, autoplay: true },
+      { type: "lottie", src: "26-2.json", top: 497, left: 510,  width: 60, height: 60, loop: true, autoplay: true },
+      { type: "lottie", src: "26-3.json", top: 497, left: 945,  width: 60, height: 60, loop: true, autoplay: true },
+      { type: "lottie", src: "26-4.json", top: 497, left: 1380, width: 60, height: 60, loop: true, autoplay: true },
+      { type: "lottie", src: "26-5.json", top: 497, left: 1815, width: 60, height: 60, loop: true, autoplay: true },
+    ],
+    links: []
+  },
+
+  // 27 — 링크
+  {
+    bg: "27.png", media: [],
+    links: [
+      { url: "https://kmong.com/events/kmong-awards/2025", top: 994, left: 1493, width: 367, height: 26 }
+    ]
+  },
+
+  // 28 — 영상
+  {
+    bg: "28.png",
+    media: [
+      { type: "video", src: "28.mp4", top: 122, left: 158, width: 860, height: 484, autoplay: true, loop: true, muted: true },
+    ],
+    links: []
+  },
+
+  // 29
+  { bg: "29.png", media: [], links: [] },
+
+  // 30 — 영상
+  {
+    bg: "30.png",
+    media: [
+      { type: "video", src: "30.mp4", top: 389, left: 420, width: 1080, height: 225, autoplay: true, loop: true, muted: true },
+    ],
+    links: []
+  },
+
+  // 31
+  { bg: "31.png", media: [], links: [] },
+  // 32
+  { bg: "32.png", media: [], links: [] },
+
+  // 33 — GIF
+  {
+    bg: "33.png",
+    media: [
+      { type: "gif", src: "33.gif", top: 176, left: 391, width: 391, height: 176 },
+    ],
+    links: []
+  },
+
+  // 34
+  { bg: "34.png", media: [], links: [] },
+  // 35
+  { bg: "35.png", media: [], links: [] },
+
+  // 36 — 링크
+  {
+    bg: "36.png", media: [],
+    links: [
+      { url: "https://www.youtube.com/shorts/C-yykehB1y8", top: 162, left: 932, width: 56, height: 21 }
+    ]
+  },
+
+  // 37
+  { bg: "37.png", media: [], links: [] },
+  // 38
+  { bg: "38.png", media: [], links: [] },
+
+  // 39 — 링크
+  {
+    bg: "39.png", media: [],
+    links: [
+      { url: "https://www.youtube.com/shorts/QEak0AiSfIU", top: 188, left: 451, width: 56, height: 21 }
+    ]
+  },
+
+  // 40
+  { bg: "40.png", media: [], links: [] },
+  // 41
+  { bg: "41.png", media: [], links: [] },
+
+  // 42 — 영상 + 링크
+  {
+    bg: "42.png",
+    media: [
+      { type: "video", src: "42.mp4", top: 390, left: 227, width: 400, height: 400, autoplay: true, loop: true, muted: true },
+    ],
+    links: [
+      { url: "https://www.youtube.com/watch?v=9nCt_WpS_EE", top: 315, left: 762, width: 49, height: 18 }
+    ]
+  },
+
+  // 43
+  { bg: "43.png", media: [], links: [] },
+  // 44
+  { bg: "44.png", media: [], links: [] },
+  // 45
+  { bg: "45.png", media: [], links: [] },
+  // 46
+  { bg: "46.png", media: [], links: [] },
+  // 47
+  { bg: "47.png", media: [], links: [] },
+  // 48
+  { bg: "48.png", media: [], links: [] },
+  // 49
+  { bg: "49.png", media: [], links: [] },
+
+];
+
+// ================================================================
+const VP_W = 1920, VP_H = 1080;
+
+const viewport  = document.getElementById('viewport');
+const dotsEl    = document.getElementById('dots');
+const counter   = document.getElementById('counter');
+const slideNum  = document.getElementById('slide-num');
+const progress  = document.getElementById('progress');
+const cursor    = document.getElementById('cursor');
+const loadingEl = document.getElementById('loading');
+
+let current   = 0;
+let animating = false;
+const total   = SLIDES.length;
+
+// ── 뷰포트 스케일 ───────────────────────────────────────
+function scaleViewport() {
+  // 항상 1920×1080 비율 유지, 화면에 맞게 균등 스케일
+  const scale = Math.min(window.innerWidth / VP_W, window.innerHeight / VP_H);
+  viewport.style.width  = VP_W + 'px';
+  viewport.style.height = VP_H + 'px';
+  viewport.style.transform = `scale(${scale})`;
+  // 여백을 검정으로 채움 (letterbox)
+  document.getElementById('stage').style.background = '#0a0a0a';
+}
+window.addEventListener('resize', scaleViewport);
+scaleViewport();
+
+// ── 슬라이드 DOM 생성 ───────────────────────────────────
+const slideEls = [];
+const lottieAnims = []; // {slideIdx, anim}
+
+SLIDES.forEach((data, i) => {
+  const slide = document.createElement('div');
+  slide.className = 'slide' + (i === 0 ? ' active' : '');
+
+  // 배경 PNG
+  const bg = document.createElement('div');
+  bg.className = 'slide-bg';
+  bg.style.backgroundImage = `url('${data.bg}')`;
+  slide.appendChild(bg);
+
+  // 미디어
+  (data.media || []).forEach((m, mi) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'media-overlay';
+    wrap.style.cssText = `top:${m.top}px;left:${m.left}px;width:${m.width}px;height:${m.height}px;`;
+
+    if (m.type === 'video') {
+      const v = document.createElement('video');
+      v.src = m.src;
+      v.loop = true; v.muted = true; v.playsInline = true;
+      v.autoplay = (i === 0);  // 첫 슬라이드만 즉시 재생
+      wrap.appendChild(v);
+
+    } else if (m.type === 'lottie') {
+      const div = document.createElement('div');
+      div.className = 'lottie-wrap';
+      wrap.appendChild(div);
+      // 로티는 나중에 초기화 (아래에서)
+      wrap.dataset.lottieIdx = mi;
+      wrap.dataset.lottieSlide = i;
+
+    } else { // gif
+      const img = document.createElement('img');
+      img.src = m.src; img.alt = '';
+      wrap.appendChild(img);
+    }
+    slide.appendChild(wrap);
+  });
+
+  // 링크
+  (data.links || []).forEach(l => {
+    const a = document.createElement('a');
+    a.href = l.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.className = 'link-overlay';
+    a.style.cssText = `top:${l.top}px;left:${l.left}px;width:${l.width}px;height:${l.height}px;`;
+    // 링크 클릭이 슬라이드 전환을 막도록
+    a.addEventListener('click', e => e.stopPropagation());
+    slide.appendChild(a);
+  });
+
+  viewport.appendChild(slide);
+  slideEls.push(slide);
+});
+
+// ── 로티 초기화 ─────────────────────────────────────────
+slideEls.forEach((slideEl, i) => {
+  const data = SLIDES[i];
+  let lottieCount = 0;
+  const wraps = slideEl.querySelectorAll('.media-overlay');
+
+  wraps.forEach((wrap) => {
+    if (wrap.dataset.lottieSlide === undefined) return;
+    const mi = parseInt(wrap.dataset.lottieIdx);
+    const m  = data.media[mi];
+    if (!m || m.type !== 'lottie') return;
+
+    const container = wrap.querySelector('.lottie-wrap');
+    if (!container) return;
+
+    const anim = lottie.loadAnimation({
+      container,
+      renderer: 'svg',
+      loop:     true,
+      autoplay: (i === 0),
+      path:     m.src,
+    });
+    lottieAnims.push({ slideIdx: i, anim });
+  });
+});
+
+// ── PNG 프리로드 후 로딩 화면 제거 ─────────────────────
+let loaded = 0;
+const preloadCount = Math.min(total, 5); // 처음 5장만 미리 로드
+function tryHideLoading() {
+  loaded++;
+  if (loaded >= preloadCount) {
+    loadingEl.style.opacity = '0';
+    setTimeout(() => loadingEl.style.display = 'none', 500);
+    // 나머지 슬라이드 백그라운드 로드
+    SLIDES.slice(preloadCount).forEach(d => { new Image().src = d.bg; });
+  }
+}
+SLIDES.slice(0, preloadCount).forEach(d => {
+  const img = new Image();
+  img.onload = img.onerror = tryHideLoading;
+  img.src = d.bg;
+});
+
+// ── UI ──────────────────────────────────────────────────
+function buildDots() {}
+
+function updateUI() {
+  counter.textContent  = `${current + 1} / ${total}`;
+  
+
+  
+}
+
+// ── 슬라이드 전환 ────────────────────────────────────────
+function goTo(idx, dir) {
+  if (animating || idx === current || idx < 0 || idx >= total) return;
+  animating = true;
+  if (dir === undefined) dir = idx > current ? 1 : -1;
+
+  const prevEl = slideEls[current];
+  const nextEl = slideEls[idx];
+
+  // 현재 슬라이드 영상/로티 정지
+  prevEl.querySelectorAll('video').forEach(v => v.pause());
+  lottieAnims.filter(a => a.slideIdx === current).forEach(a => a.anim.pause());
+
+  // 다음 슬라이드 PNG 미리 로드 보장
+  const nextBg = SLIDES[idx].bg;
+  const preload = new Image();
+  preload.onload = preload.onerror = () => {
+    prevEl.classList.add(dir > 0 ? 'anim-out-left' : 'anim-out-right');
+    prevEl.classList.add('leaving');
+    nextEl.classList.add(dir > 0 ? 'anim-in-right' : 'anim-in-left');
+    nextEl.classList.add('active');
+
+    // 다음 슬라이드 영상/로티 재생
+    nextEl.querySelectorAll('video').forEach(v => { v.currentTime = 0; v.play(); });
+    lottieAnims.filter(a => a.slideIdx === idx).forEach(a => { a.anim.goToAndPlay(0); });
+
+    setTimeout(() => {
+      prevEl.classList.remove('active', 'leaving', 'anim-out-left', 'anim-out-right');
+      nextEl.classList.remove('anim-in-right', 'anim-in-left');
+      current = idx;
+      updateUI();
+      animating = false;
+    }, 580);
+  };
+  preload.src = nextBg;
+}
+
+const next = () => goTo(current + 1,  1);
+const prev = () => goTo(current - 1, -1);
+
+// ── 이벤트 ──────────────────────────────────────────────
+document.getElementById('btn-next').addEventListener('click', next);
+document.getElementById('btn-prev').addEventListener('click', prev);
+document.getElementById('zone-right').addEventListener('click', next);
+document.getElementById('zone-left' ).addEventListener('click', prev);
+
+document.addEventListener('keydown', e => {
+  if (['ArrowRight', ' '].includes(e.key)) { e.preventDefault(); next(); }
+  if (e.key === 'ArrowLeft')               { e.preventDefault(); prev(); }
+});
+
+let tx = 0;
+document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+document.addEventListener('touchend',   e => {
+  const dx = e.changedTouches[0].clientX - tx;
+  if (Math.abs(dx) > 50) dx < 0 ? next() : prev();
+});
+
+document.addEventListener('mousemove', e => {
+  cursor.style.left = e.clientX + 'px';
+  cursor.style.top  = e.clientY + 'px';
+
+  const overInteractive = e.target.closest('.link-overlay, button, .dot');
+  if (overInteractive) {
+    cursor.style.width   = '36px';
+    cursor.style.height  = '36px';
+    cursor.style.opacity = '0.6';
+  } else {
+    cursor.style.width   = '10px';
+    cursor.style.height  = '10px';
+    cursor.style.opacity = '1';
+  }
+});
+
+// ── 초기화 ──────────────────────────────────────────────
+// 썸네일 스트립 생성
+const thumbStrip = document.getElementById('thumb-strip');
+const thumbEls = [];
+SLIDES.forEach((data, i) => {
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb' + (i === 0 ? ' active' : '');
+  if (data.bg) thumb.style.backgroundImage = `url('${data.bg}')`;
+  thumb.addEventListener('click', () => goTo(i));
+  thumbStrip.appendChild(thumb);
+  thumbEls.push(thumb);
+});
+
+// 호버시 썸네일 스트립 표시
+const uiEl = document.getElementById('ui');
+uiEl.addEventListener('mouseenter', () => thumbStrip.classList.add('visible'));
+uiEl.addEventListener('mouseleave', () => {
+  // 마우스가 썸네일 스트립으로 이동하면 유지
+  setTimeout(() => {
+    if (!thumbStrip.matches(':hover')) thumbStrip.classList.remove('visible');
+  }, 50);
+});
+thumbStrip.addEventListener('mouseleave', () => thumbStrip.classList.remove('visible'));
+
+buildDots();
+updateUI();
+slideEls[0].querySelectorAll('video').forEach(v => v.play());
+lottieAnims.filter(a => a.slideIdx === 0).forEach(a => a.anim.play());
+</script>
+</body>
+</html>
